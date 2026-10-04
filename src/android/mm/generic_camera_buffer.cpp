@@ -88,6 +88,31 @@ CameraBuffer::Private::Private([[maybe_unused]] CameraBuffer *cameraBuffer,
 	const unsigned int numPlanes = info.numPlanes();
 	planeInfo_.resize(numPlanes);
 
+	/*
+	 * minigbm pads rows; take the real layout from its handle when the
+	 * buffer comes from it (packed cros_gralloc_handle: fds[5], strides[4],
+	 * offsets[4], sizes[4], id, width, height, format, tiling,
+	 * modifier (2 ints), use_flags (2 ints), magic).
+	 */
+	constexpr int kMinigbmStrides = 5, kMinigbmOffsets = 9, kMinigbmMagic = 26;
+	constexpr uint32_t kMinigbmMagicValue = 0xABCDDCBA;
+	if (camera3Buffer->numFds + camera3Buffer->numInts > kMinigbmMagic &&
+	    static_cast<uint32_t>(camera3Buffer->data[kMinigbmMagic]) == kMinigbmMagicValue) {
+		bool ok = true;
+		for (unsigned int i = 0; i < numPlanes; ++i) {
+			const unsigned int stride = camera3Buffer->data[kMinigbmStrides + i];
+			const unsigned int off = camera3Buffer->data[kMinigbmOffsets + i];
+			const unsigned int lines = i ? (size.height + 1) / 2 : size.height;
+			if (!stride || off + stride * lines > bufferLength_) {
+				ok = false;
+				break;
+			}
+			planeInfo_[i] = { stride, off, stride * lines };
+		}
+		if (ok)
+			return;
+	}
+
 	unsigned int offset = 0;
 	for (unsigned int i = 0; i < numPlanes; ++i) {
 		const unsigned int planeSize = info.planeSize(size, i);
