@@ -29,6 +29,9 @@ public:
 		     IPAFrameContext &frameContext,
 		     const SwIspStats *stats,
 		     ControlList &metadata) override;
+
+private:
+	bool awbInitialized_ = false;
 };
 
 } /* namespace ipa::soft::algorithms */

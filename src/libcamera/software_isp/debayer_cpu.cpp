@@ -708,8 +708,15 @@ DebayerCpu::strideAndFrameSize(const PixelFormat &outputFormat, const Size &size
 	/* round up to multiple of 8 for 64 bits alignment */
 	unsigned int stride = (size.width * config.bpp / 8 + 7) & ~7;
 
-	if (outputFormat == formats::NV12 || outputFormat == formats::NV21)
+	if (outputFormat == formats::NV12 || outputFormat == formats::NV21) {
+		/*
+		 * Match the 128 byte row alignment Qualcomm gralloc (minigbm
+		 * msm) uses for NV12, so Android buffers can be written
+		 * directly.
+		 */
+		stride = (size.width + 127) & ~127;
 		return std::make_tuple(stride, stride * size.height * 3 / 2);
+	}
 
 	return std::make_tuple(stride, stride * size.height);
 }

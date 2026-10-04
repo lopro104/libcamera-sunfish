@@ -105,7 +105,7 @@ PlatformFrameBufferAllocator::Private::allocateDmaHeap(int halPixelFormat,
 	const libcamera::PixelFormat pixelFormat =
 		cameraDevice_->capabilities()->toPixelFormat(halPixelFormat);
 	const auto &info = PixelFormatInfo::info(pixelFormat);
-	const unsigned int stride = info.stride(size.width, 0, 8);
+	const unsigned int stride = info.stride(size.width, 0, 128);
 
 	std::vector<FrameBuffer::Plane> planes(info.numPlanes());
 	size_t total = 0;

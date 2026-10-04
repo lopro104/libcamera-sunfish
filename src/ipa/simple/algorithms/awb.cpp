@@ -7,6 +7,7 @@
 
 #include "awb.h"
 
+#include <algorithm>
 #include <numeric>
 #include <stdint.h>
 
@@ -28,6 +29,7 @@ int Awb::configure(IPAContext &context,
 {
 	auto &gains = context.activeState.awb.gains;
 	gains = { { 1.0, 1.0, 1.0 } };
+	awbInitialized_ = false;
 
 	return 0;
 }
@@ -88,11 +90,27 @@ void Awb::process(IPAContext &context,
 	 * Clamp max gain at 4.0, this also avoids 0 division.
 	 */
 	auto &gains = context.activeState.awb.gains;
-	gains = { {
+	RGB<float> target{ {
 		sum.r() <= sum.g() / 4 ? 4.0f : static_cast<float>(sum.g()) / sum.r(),
 		1.0,
 		sum.b() <= sum.g() / 4 ? 4.0f : static_cast<float>(sum.g()) / sum.b(),
 	} };
+
+	/*
+	 * Grey world swings wildly on scenes dominated by one colour (a
+	 * screen, a wall). Keep the gains within what real illuminants need
+	 * and move towards the new estimate gradually.
+	 */
+	static constexpr float kMinGain = 0.75f, kMaxGain = 2.5f, kSpeed = 0.15f;
+	target.r() = std::clamp(target.r(), kMinGain, kMaxGain);
+	target.b() = std::clamp(target.b(), kMinGain, kMaxGain);
+	if (!awbInitialized_) {
+		gains = target;
+		awbInitialized_ = true;
+	} else {
+		gains.r() += (target.r() - gains.r()) * kSpeed;
+		gains.b() += (target.b() - gains.b()) * kSpeed;
+	}
 
 	RGB<double> rgbGains{ { 1 / gains.r(), 1 / gains.g(), 1 / gains.b() } };
 	context.activeState.awb.temperatureK = estimateCCT(rgbGains);
