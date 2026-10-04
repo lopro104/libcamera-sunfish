@@ -11,6 +11,7 @@
 #include <fstream>
 #include <set>
 #include <sys/mman.h>
+#include <time.h>
 #include <unistd.h>
 #include <vector>
 
@@ -1291,6 +1292,16 @@ void CameraDevice::requestComplete(Request *request)
 	uint64_t sensorTimestamp = static_cast<uint64_t>(request->metadata()
 								 .get(controls::SensorTimestamp)
 								 .value_or(0));
+	/*
+	 * The framework never retires a frame whose shutter timestamp is 0,
+	 * which stalls closing the camera. Requests completed while stopping
+	 * may lack a sensor timestamp, so fall back to the current time.
+	 */
+	if (!sensorTimestamp) {
+		struct timespec ts;
+		clock_gettime(CLOCK_BOOTTIME, &ts);
+		sensorTimestamp = ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+	}
 	notifyShutter(descriptor->frameNumber_, sensorTimestamp);
 
 	LOG(HAL, Debug) << "Request " << request->cookie() << " completed with "

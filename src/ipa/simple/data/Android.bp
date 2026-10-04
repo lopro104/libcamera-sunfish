@@ -1,10 +1,6 @@
 prebuilt_etc {
     name: "libcamera-ipa_soft_simple_data",
     relative_install_path: "libcamera/ipa/simple",
-    srcs: [
-        "imx355.yaml",
-        "imx363.yaml",
-        "uncalibrated.yaml",
-    ],
+    srcs: ["uncalibrated.yaml"],
     installable: false,
 }
