@@ -7,6 +7,8 @@
 
 #include "agc.h"
 
+#include <algorithm>
+
 #include <stdint.h>
 
 #include <libcamera/base/log.h>
@@ -164,6 +166,29 @@ void Agc::process(IPAContext &context,
 	}
 
 	float exposureMSV = (denom == 0 ? 0 : static_cast<float>(num) / denom);
+
+	/*
+	 * Protect highlights: the mean sample value alone keeps bright parts
+	 * of the scene (screens, windows) clipped when the rest is darker.
+	 * Count the samples in the top 1/32 of the histogram and lower the
+	 * exposure when too many are clipped, or at least stop raising it.
+	 */
+	const unsigned int topBins = std::max(1u, SwIspStats::kYHistogramSize / 32);
+	unsigned int clipped = 0, total = 0;
+	for (unsigned int i = blackLevelHistIdx; i < SwIspStats::kYHistogramSize; i++) {
+		total += histogram[i];
+		if (i >= SwIspStats::kYHistogramSize - topBins)
+			clipped += histogram[i];
+	}
+	const float clippedRatio = total ? static_cast<float>(clipped) / total : 0;
+	if (clippedRatio > 0.02)
+		exposureMSV = std::max(exposureMSV,
+				       kExposureOptimal + kExposureSatisfactory + 0.01f);
+	else if (clippedRatio > 0.005)
+		exposureMSV = std::max(exposureMSV, kExposureOptimal);
+
+	LOG(IPASoftExposure, Debug) << "clipped ratio " << clippedRatio;
+
 	updateExposure(context, frameContext, exposureMSV);
 }
 
