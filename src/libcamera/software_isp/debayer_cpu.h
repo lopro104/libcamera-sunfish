@@ -146,6 +146,10 @@ private:
 	Rectangle window_;
 	std::unique_ptr<SwStatsCpu> stats_;
 	unsigned int xShift_; /* Offset of 0/1 applied to window_.x */
+	bool yuvOutput_ = false;
+	bool swapUV_ = false;
+	uint8_t *uvPlane_ = nullptr;
+	unsigned int uvStride_ = 0;
 
 	static constexpr unsigned int kMinThreads = 1;
 	static constexpr unsigned int kMaxThreads = 8;

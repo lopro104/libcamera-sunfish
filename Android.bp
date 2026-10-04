@@ -23,7 +23,8 @@ cc_library_shared {
     name: "libcamera",
     srcs: [
         "meson_generated/src/libcamera/*.cpp",
-        "meson_generated/src/libcamera/proxy/raspberrypi_ipa_proxy.cpp",
+        "meson_generated/src/libcamera/ipa/soft_ipa_interface.cpp",
+        "meson_generated/src/libcamera/proxy/soft_ipa_proxy.cpp",
         "src/libcamera/bayer_format.cpp",
         "src/libcamera/byte_stream_buffer.cpp",
         "src/libcamera/camera.cpp",
@@ -63,9 +64,7 @@ cc_library_shared {
         "src/libcamera/media_object.cpp",
         "src/libcamera/media_pipeline.cpp",
         "src/libcamera/orientation.cpp",
-        "src/libcamera/pipeline/rpi/common/*.cpp",
-        "src/libcamera/pipeline/rpi/pisp/pisp.cpp",
-        "src/libcamera/pipeline/rpi/vc4/vc4.cpp",
+        "src/libcamera/pipeline/simple/simple.cpp",
         "src/libcamera/pipeline_handler.cpp",
         "src/libcamera/pixel_format.cpp",
         "src/libcamera/process.cpp",
@@ -73,6 +72,11 @@ cc_library_shared {
         "src/libcamera/request.cpp",
         "src/libcamera/sensor/*.cpp",
         "src/libcamera/shared_mem_object.cpp",
+        "src/libcamera/software_isp/benchmark.cpp",
+        "src/libcamera/software_isp/debayer.cpp",
+        "src/libcamera/software_isp/debayer_cpu.cpp",
+        "src/libcamera/software_isp/software_isp.cpp",
+        "src/libcamera/software_isp/swstats_cpu.cpp",
         "src/libcamera/source_paths.cpp",
         "src/libcamera/stream.cpp",
         "src/libcamera/sysfs.cpp",
@@ -96,7 +100,6 @@ cc_library_shared {
     ],
     shared_libs: [
         "libcamera-base",
-        "libpisp",
     ],
     static_libs: ["libyaml"],
     local_include_dirs: [
@@ -110,7 +113,6 @@ cc_library_shared {
         "src/libcamera",
     ],
     soc_specific: true,
-    header_libs: ["libpisp_headers"],
     defaults: ["libcamera-rpi-defaults"],
 }
 
@@ -132,41 +134,6 @@ cc_library_shared {
         "src/libcamera/base",
     ],
     soc_specific: true,
-    defaults: ["libcamera-rpi-defaults"],
-}
-
-cc_library_shared {
-    name: "ipa_rpi_vc4",
-    srcs: ["src/ipa/rpi/vc4/vc4.cpp"],
-    cflags: [
-        "-DLIBCAMERA_BASE_PRIVATE",
-        "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
-        "-Wextra-semi",
-        "-Wnon-virtual-dtor",
-        "-Wthread-safety",
-        "-std=c++20",
-    ],
-    shared_libs: [
-        "libcamera",
-        "libcamera-base",
-    ],
-    static_libs: ["libcamera-rpi_src_ipa_libipa_libipa_a"],
-    whole_static_libs: [
-        "libcamera-rpi_src_ipa_rpi_cam_helper_librpi_ipa_cam_helper_a",
-        "libcamera-rpi_src_ipa_rpi_common_librpi_ipa_common_a",
-        "libcamera-rpi_src_ipa_rpi_controller_librpi_ipa_controller_a",
-    ],
-    local_include_dirs: [
-        "include",
-        "meson_generated/include",
-        "meson_generated/include/libcamera",
-        "meson_generated/include/libcamera/ipa",
-        "src/ipa",
-        "src/ipa/rpi",
-        "src/ipa/rpi/vc4",
-    ],
-    soc_specific: true,
-    relative_install_path: "libcamera/ipa",
     defaults: ["libcamera-rpi-defaults"],
 }
 
@@ -284,44 +251,6 @@ cc_library_static {
 }
 
 cc_library_shared {
-    name: "ipa_rpi_pisp",
-    srcs: ["src/ipa/rpi/pisp/pisp.cpp"],
-    cflags: [
-        "-DLIBCAMERA_BASE_PRIVATE",
-        "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
-        "-Wextra-semi",
-        "-Wno-address-of-packed-member",
-        "-Wnon-virtual-dtor",
-        "-Wthread-safety",
-        "-std=c++20",
-    ],
-    shared_libs: [
-        "libcamera",
-        "libcamera-base",
-        "libpisp",
-    ],
-    static_libs: ["libcamera-rpi_src_ipa_libipa_libipa_a"],
-    whole_static_libs: [
-        "libcamera-rpi_src_ipa_rpi_cam_helper_librpi_ipa_cam_helper_a",
-        "libcamera-rpi_src_ipa_rpi_common_librpi_ipa_common_a",
-        "libcamera-rpi_src_ipa_rpi_controller_librpi_ipa_controller_a",
-    ],
-    local_include_dirs: [
-        "include",
-        "meson_generated/include",
-        "meson_generated/include/libcamera",
-        "meson_generated/include/libcamera/ipa",
-        "src/ipa",
-        "src/ipa/rpi",
-        "src/ipa/rpi/pisp",
-    ],
-    soc_specific: true,
-    relative_install_path: "libcamera/ipa",
-    header_libs: ["libpisp_headers"],
-    defaults: ["libcamera-rpi-defaults"],
-}
-
-cc_library_shared {
     name: "camera.libcamera",
     srcs: [
         "src/android/*.cpp",
@@ -348,7 +277,7 @@ cc_library_shared {
         "libcamera-base",
         "libexif",
         "libjpeg",
-        "libyuv_chromium",
+        "libyuv",
     ],
     static_libs: ["libcamera-rpi_src_android_libcamera_metadata_a"],
     local_include_dirs: [
@@ -406,4 +335,37 @@ cc_defaults {
     name: "libcamera-rpi-raw-defaults",
     cflags: ["-include meson_generated/config.h"],
     rtti: true,
+}
+
+cc_library_shared {
+    name: "ipa_soft_simple",
+    srcs: [
+        "src/ipa/simple/algorithms/*.cpp",
+        "src/ipa/simple/ipa_context.cpp",
+        "src/ipa/simple/soft_simple.cpp",
+    ],
+    cflags: [
+        "-DLIBCAMERA_BASE_PRIVATE",
+        "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
+        "-Wextra-semi",
+        "-Wnon-virtual-dtor",
+        "-Wthread-safety",
+        "-std=c++20",
+    ],
+    shared_libs: [
+        "libcamera",
+        "libcamera-base",
+    ],
+    static_libs: ["libcamera-rpi_src_ipa_libipa_libipa_a"],
+    local_include_dirs: [
+        "include",
+        "meson_generated/include",
+        "meson_generated/include/libcamera",
+        "meson_generated/include/libcamera/ipa",
+        "src/ipa",
+        "src/ipa/simple",
+    ],
+    soc_specific: true,
+    relative_install_path: "libcamera/ipa",
+    defaults: ["libcamera-rpi-defaults"],
 }

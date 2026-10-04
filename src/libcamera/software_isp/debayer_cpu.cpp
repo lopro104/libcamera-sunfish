@@ -49,6 +49,8 @@ private:
 	void memcpyNextLine(const uint8_t *linePointers[]);
 	void process2(uint32_t frame, const uint8_t *src, uint8_t *dst);
 	void process4(uint32_t frame, const uint8_t *src, uint8_t *dst);
+	void debayerLinePair(uint8_t *dst, unsigned int y, const uint8_t *linePointers[],
+			     const uint8_t *src, bool last);
 
 	/* Max. supported Bayer pattern height is 4, debayering this requires 5 lines */
 	static constexpr unsigned int kMaxLineBuffers = 5;
@@ -61,6 +63,8 @@ private:
 	unsigned int lineBufferPadding_;
 	unsigned int lineBufferIndex_;
 	std::vector<uint8_t> lineBuffers_[kMaxLineBuffers];
+	/* RGB888 scratch lines used when producing YUV output */
+	std::vector<uint8_t> rgbLines_[2];
 	bool enableInputMemcpy_;
 };
 
@@ -371,7 +375,9 @@ int DebayerCpu::getInputConfig(PixelFormat inputFormat, DebayerInputConfig &conf
 								  formats::ARGB8888,
 								  formats::BGR888,
 								  formats::XBGR8888,
-								  formats::ABGR8888 });
+								  formats::ABGR8888,
+								  formats::NV12,
+								  formats::NV21 });
 		return 0;
 	}
 
@@ -386,7 +392,9 @@ int DebayerCpu::getInputConfig(PixelFormat inputFormat, DebayerInputConfig &conf
 								  formats::ARGB8888,
 								  formats::BGR888,
 								  formats::XBGR8888,
-								  formats::ABGR8888 });
+								  formats::ABGR8888,
+								  formats::NV12,
+								  formats::NV21 });
 		return 0;
 	}
 
@@ -405,6 +413,12 @@ int DebayerCpu::getOutputConfig(PixelFormat outputFormat, DebayerOutputConfig &c
 	if (outputFormat == formats::XRGB8888 || outputFormat == formats::ARGB8888 ||
 	    outputFormat == formats::XBGR8888 || outputFormat == formats::ABGR8888) {
 		config.bpp = 32;
+		return 0;
+	}
+
+	if (outputFormat == formats::NV12 || outputFormat == formats::NV21) {
+		/* Luma plane; the half-height chroma plane follows it */
+		config.bpp = 8;
 		return 0;
 	}
 
@@ -457,6 +471,8 @@ int DebayerCpu::setDebayerFunctions(PixelFormat inputFormat,
 
 	xShift_ = 0;
 	swapRedBlueGains_ = false;
+	yuvOutput_ = outputFormat == formats::NV12 || outputFormat == formats::NV21;
+	swapUV_ = outputFormat == formats::NV21;
 
 	auto invalidFmt = []() -> int {
 		LOG(Debayer, Error) << "Unsupported input output format combination";
@@ -469,6 +485,8 @@ int DebayerCpu::setDebayerFunctions(PixelFormat inputFormat,
 		addAlphaByte = true;
 		[[fallthrough]];
 	case formats::RGB888:
+	case formats::NV12:
+	case formats::NV21:
 		break;
 	case formats::XBGR8888:
 	case formats::ABGR8888:
@@ -648,6 +666,11 @@ void DebayerCpuThread::configure(unsigned int yStart, unsigned int yEnd)
 		for (unsigned int i = 0; i <= inputConfig.patternSize.height; i++)
 			lineBuffers_[i].resize(lineBufferLength_);
 	}
+
+	if (debayer_->yuvOutput_) {
+		for (auto &line : rgbLines_)
+			line.resize(debayer_->window_.width * 3 + 64);
+	}
 }
 
 /*
@@ -684,6 +707,9 @@ DebayerCpu::strideAndFrameSize(const PixelFormat &outputFormat, const Size &size
 
 	/* round up to multiple of 8 for 64 bits alignment */
 	unsigned int stride = (size.width * config.bpp / 8 + 7) & ~7;
+
+	if (outputFormat == formats::NV12 || outputFormat == formats::NV21)
+		return std::make_tuple(stride, stride * size.height * 3 / 2);
 
 	return std::make_tuple(stride, stride * size.height);
 }
@@ -797,6 +823,12 @@ void DebayerCpuThread::process2(uint32_t frame, const uint8_t *src, uint8_t *dst
 		shiftLinePointers(linePointers, src);
 		memcpyNextLine(linePointers);
 		debayer_->stats_->processLine0(frame, y, linePointers, threadIndex_);
+		if (debayer_->yuvOutput_) {
+			debayerLinePair(dst, y, linePointers, src, false);
+			src += 2 * inputStride;
+			dst += 2 * outputStride;
+			continue;
+		}
 		debayer_->debayer0(dst, linePointers);
 		src += inputStride;
 		dst += outputStride;
@@ -812,6 +844,10 @@ void DebayerCpuThread::process2(uint32_t frame, const uint8_t *src, uint8_t *dst
 		shiftLinePointers(linePointers, src);
 		memcpyNextLine(linePointers);
 		debayer_->stats_->processLine0(frame, yEnd, linePointers, threadIndex_);
+		if (debayer_->yuvOutput_) {
+			debayerLinePair(dst, yEnd, linePointers, src, true);
+			return;
+		}
 		debayer_->debayer0(dst, linePointers);
 		src += inputStride;
 		dst += outputStride;
@@ -822,6 +858,62 @@ void DebayerCpuThread::process2(uint32_t frame, const uint8_t *src, uint8_t *dst
 		debayer_->debayer1(dst, linePointers);
 		src += inputStride;
 		dst += outputStride;
+	}
+}
+
+/*
+ * Debayer the line pair starting at window line \a y into the RGB scratch
+ * lines, then convert it to two luma lines and one chroma line (BT.601 full
+ * range, matching the sYCC colour space the pipeline reports). The caller has
+ * already shifted the line pointers for the first line of the pair.
+ */
+void DebayerCpuThread::debayerLinePair(uint8_t *dst, unsigned int y,
+				       const uint8_t *linePointers[],
+				       const uint8_t *src, bool last)
+{
+	unsigned int inputStride = debayer_->inputConfig_.stride;
+	unsigned int outputStride = debayer_->outputConfig_.stride;
+	unsigned int width = debayer_->window_.width;
+
+	debayer_->debayer0(rgbLines_[0].data(), linePointers);
+
+	shiftLinePointers(linePointers, src + inputStride);
+	if (last)
+		/* next line may point outside of src, use prev. */
+		linePointers[2] = linePointers[0];
+	else
+		memcpyNextLine(linePointers);
+	debayer_->debayer1(rgbLines_[1].data(), linePointers);
+
+	uint8_t *y0 = dst;
+	uint8_t *y1 = dst + outputStride;
+	uint8_t *uv = debayer_->uvPlane_ + (y / 2) * debayer_->uvStride_;
+	const uint8_t *p0 = rgbLines_[0].data();
+	const uint8_t *p1 = rgbLines_[1].data();
+	const unsigned int ui = debayer_->swapUV_ ? 1 : 0;
+
+	/* RGB888 is stored B, G, R in memory */
+	for (unsigned int x = 0; x < width; x += 2) {
+		int b[4] = { p0[0], p0[3], p1[0], p1[3] };
+		int g[4] = { p0[1], p0[4], p1[1], p1[4] };
+		int r[4] = { p0[2], p0[5], p1[2], p1[5] };
+
+		y0[x] = (77 * r[0] + 150 * g[0] + 29 * b[0] + 128) >> 8;
+		y0[x + 1] = (77 * r[1] + 150 * g[1] + 29 * b[1] + 128) >> 8;
+		y1[x] = (77 * r[2] + 150 * g[2] + 29 * b[2] + 128) >> 8;
+		y1[x + 1] = (77 * r[3] + 150 * g[3] + 29 * b[3] + 128) >> 8;
+
+		int rs = r[0] + r[1] + r[2] + r[3];
+		int gs = g[0] + g[1] + g[2] + g[3];
+		int bs = b[0] + b[1] + b[2] + b[3];
+		int u = ((-43 * rs - 85 * gs + 128 * bs + 512) >> 10) + 128;
+		int v = ((128 * rs - 107 * gs - 21 * bs + 512) >> 10) + 128;
+
+		uv[x + ui] = std::clamp(u, 0, 255);
+		uv[x + 1 - ui] = std::clamp(v, 0, 255);
+
+		p0 += 6;
+		p1 += 6;
 	}
 }
 
@@ -1000,6 +1092,15 @@ void DebayerCpu::process(uint32_t frame, FrameBuffer *input, FrameBuffer *output
 	workPending_ = (1 << threads_.size()) - 1;
 	workPendingMutex_.unlock();
 
+	if (yuvOutput_) {
+		uvStride_ = outputConfig_.stride;
+		if (out.planes().size() > 1)
+			uvPlane_ = out.planes()[1].data();
+		else
+			uvPlane_ = out.planes()[0].data() +
+				   outputConfig_.stride * window_.height;
+	}
+
 	for (auto &thread : threads_)
 		thread->invokeMethod(&DebayerCpuThread::process,
 				     ConnectionTypeQueued, frame,
@@ -1012,7 +1113,8 @@ void DebayerCpu::process(uint32_t frame, FrameBuffer *input, FrameBuffer *output
 		});
 	}
 
-	metadata.planes()[0].bytesused = out.planes()[0].size();
+	for (unsigned int i = 0; i < out.planes().size(); i++)
+		metadata.planes()[i].bytesused = out.planes()[i].size();
 
 	dmaSyncers.clear();
 

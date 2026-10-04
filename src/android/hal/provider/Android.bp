@@ -83,17 +83,14 @@ apex {
     native_shared_libs: [
         "camera.libcamera",
     ] + select(soong_config_variable("libcamera", "ipa"), {
-        "pisp": ["ipa_rpi_pisp"],
-        "vc4": ["ipa_rpi_vc4"],
+        "simple": ["ipa_soft_simple"],
         default: [],
     }),
     prebuilts: [
         "android.hardware.camera.provider-V1-libcamera-service.rc",
         "android.hardware.camera.provider-V1-libcamera-service.xml",
-        "backend_default_config.json",
     ] + select(soong_config_variable("libcamera", "ipa"), {
-        "pisp": ["libcamera-rpi-ipa_rpi_pisp_data"],
-        "vc4": ["libcamera-rpi-ipa_rpi_vc4_data"],
+        "simple": ["libcamera-ipa_soft_simple_data"],
         default: [],
     }),
 }

@@ -228,9 +228,18 @@ FrameBuffer *CameraStream::getBuffer()
 		 * \todo Store a reference to the format of the source stream
 		 * instead of hardcoding.
 		 */
+		/*
+		 * The buffer is only written by the camera and read by the
+		 * post-processor, so don't inherit display or GPU usage flags
+		 * from the Android stream; gralloc may reject them for YUV.
+		 */
 		auto frameBuffer = allocator_->allocate(HAL_PIXEL_FORMAT_YCBCR_420_888,
 							configuration().size,
-							camera3Stream_->usage);
+							GRALLOC_USAGE_HW_CAMERA_WRITE |
+							GRALLOC_USAGE_SW_READ_OFTEN |
+							GRALLOC_USAGE_SW_WRITE_OFTEN);
+		if (!frameBuffer)
+			return nullptr;
 		allocatedBuffers_.push_back(std::move(frameBuffer));
 		buffers_.emplace_back(allocatedBuffers_.back().get());
 	}

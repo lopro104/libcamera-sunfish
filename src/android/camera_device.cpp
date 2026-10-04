@@ -21,9 +21,12 @@
 #include <libcamera/control_ids.h>
 #include <libcamera/controls.h>
 #include <libcamera/fence.h>
+#include <libcamera/color_space.h>
 #include <libcamera/formats.h>
 #include <libcamera/geometry.h>
 #include <libcamera/property_ids.h>
+
+#include "libcamera/internal/formats.h"
 
 #include "system/graphics.h"
 
@@ -704,6 +707,75 @@ int CameraDevice::configureStreams(camera3_stream_configuration_t *stream_list)
 		streamConfigs[index].streams.push_back({ jpegStream, type });
 	}
 
+	/*
+	 * Pipelines backed by the software ISP produce a single processed
+	 * stream. Produce every smaller NV12 stream from the largest one by
+	 * scaling in software instead of asking the pipeline for several.
+	 */
+	if (streamConfigs.size() > 1) {
+		auto largest = std::max_element(
+			streamConfigs.begin(), streamConfigs.end(),
+			[](const Camera3StreamConfig &a, const Camera3StreamConfig &b) {
+				if (a.config.pixelFormat != formats::NV12)
+					return b.config.pixelFormat == formats::NV12;
+				if (b.config.pixelFormat != formats::NV12)
+					return false;
+				return a.config.size.width * a.config.size.height <
+				       b.config.size.width * b.config.size.height;
+			});
+
+		if (largest->config.pixelFormat == formats::NV12) {
+			const size_t sourceIndex = largest - streamConfigs.begin();
+			std::vector<Camera3StreamConfig> kept;
+
+			for (size_t i = 0; i < streamConfigs.size(); i++) {
+				if (i == sourceIndex)
+					continue;
+
+				Camera3StreamConfig &other = streamConfigs[i];
+				Camera3StreamConfig &source = streamConfigs[sourceIndex];
+				const bool mappable =
+					other.config.pixelFormat == formats::NV12 &&
+					other.config.size.width <= source.config.size.width &&
+					other.config.size.height <= source.config.size.height &&
+					std::all_of(other.streams.begin(), other.streams.end(),
+						    [](const Camera3StreamConfig::Camera3Stream &st) {
+							    return st.type != CameraStream::Type::Internal;
+						    });
+				if (!mappable) {
+					kept.push_back(std::move(other));
+					continue;
+				}
+
+				LOG(HAL, Info)
+					<< "Producing " << other.config.size
+					<< " by scaling " << source.config.size;
+
+				if (!source.streams.empty())
+					source.streams[0].stream->usage |= GRALLOC_USAGE_SW_READ_OFTEN;
+				for (auto &st : other.streams) {
+					st.stream->usage |= GRALLOC_USAGE_SW_WRITE_OFTEN;
+					source.streams.push_back({ st.stream, CameraStream::Type::Mapped });
+				}
+			}
+
+			kept.insert(kept.begin(), std::move(streamConfigs[sourceIndex]));
+			streamConfigs = std::move(kept);
+		}
+	}
+
+	/*
+	 * Request the colour space pipelines report for YUV output, so that
+	 * validation does not flag the configuration as adjusted.
+	 */
+	for (auto &streamConfig : streamConfigs) {
+		StreamConfiguration &cfg = streamConfig.config;
+		if (!cfg.colorSpace &&
+		    PixelFormatInfo::info(cfg.pixelFormat).colourEncoding ==
+			    PixelFormatInfo::ColourEncodingYUV)
+			cfg.colorSpace = ColorSpace::Sycc;
+	}
+
 	sortCamera3StreamConfigs(streamConfigs, jpegStream);
 	for (const auto &streamConfig : streamConfigs) {
 		config->addConfiguration(streamConfig.config);
@@ -723,21 +795,38 @@ int CameraDevice::configureStreams(camera3_stream_configuration_t *stream_list)
 			 * be used when constructing the subsequent mapped
 			 * streams.
 			 */
-			if (stream.type == CameraStream::Type::Direct)
+			if (stream.type == CameraStream::Type::Direct ||
+			    stream.type == CameraStream::Type::Internal)
 				sourceStream = &streams_.back();
 		}
 	}
 
+	std::vector<std::pair<Size, PixelFormat>> requested;
+	for (const StreamConfiguration &cfg : *config)
+		requested.emplace_back(cfg.size, cfg.pixelFormat);
+
 	switch (config->validate()) {
 	case CameraConfiguration::Valid:
 		break;
-	case CameraConfiguration::Adjusted:
+	case CameraConfiguration::Adjusted: {
+		/*
+		 * Adjustments that keep every stream's size and format (such as
+		 * the buffer count) don't affect Android, so accept them.
+		 */
+		bool compatible = config->size() == requested.size();
+		for (unsigned int i = 0; compatible && i < config->size(); i++)
+			compatible = config->at(i).size == requested[i].first &&
+				     config->at(i).pixelFormat == requested[i].second;
+		if (compatible)
+			break;
+
 		LOG(HAL, Info) << "Camera configuration adjusted";
 
 		for (const StreamConfiguration &cfg : *config)
 			LOG(HAL, Info) << " - " << cfg.toString();
 
 		return -EINVAL;
+	}
 	case CameraConfiguration::Invalid:
 		LOG(HAL, Info) << "Camera configuration invalid";
 		return -EINVAL;
@@ -1084,6 +1173,10 @@ int CameraDevice::processCaptureRequest(camera3_capture_request_t *camera3Reques
 		 * for this stream.
 		 */
 		FrameBuffer *frameBuffer = cameraStream->getBuffer();
+		if (!frameBuffer) {
+			LOG(HAL, Error) << "Failed to allocate a buffer for the mapped stream";
+			return -ENOMEM;
+		}
 		buffer.internalBuffer = frameBuffer;
 
 		descriptor->request_->addBuffer(sourceStream->stream(),
