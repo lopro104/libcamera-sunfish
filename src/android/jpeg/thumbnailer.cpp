@@ -7,6 +7,8 @@
 
 #include "thumbnailer.h"
 
+#include <algorithm>
+
 #include <libcamera/base/log.h>
 
 #include <libcamera/formats.h>
@@ -55,6 +57,8 @@ void Thumbnailer::createThumbnail(const FrameBuffer &source,
 	}
 
 	const unsigned int sw = sourceSize_.width;
+	/* Rows may be padded beyond the width. */
+	const unsigned int ss = std::max(sourceStride_, sw);
 	const unsigned int sh = sourceSize_.height;
 	const unsigned int tw = targetSize.width;
 	const unsigned int th = targetSize.height;
@@ -77,17 +81,17 @@ void Thumbnailer::createThumbnail(const FrameBuffer &source,
 		unsigned int sourceY = (sh * y + th / 2) / th;
 
 		dstY = dst + y * tw;
-		srcY = src + sw * sourceY;
-		srcCb = srcC + (sourceY / 2) * sw + 0;
-		srcCr = srcC + (sourceY / 2) * sw + 1;
+		srcY = src + ss * sourceY;
+		srcCb = srcC + (sourceY / 2) * ss + 0;
+		srcCr = srcC + (sourceY / 2) * ss + 1;
 
 		for (unsigned int x = 0; x < tw; x += 2) {
 			unsigned int sourceX = (sw * x + tw / 2) / tw;
 
 			dstY[x] = srcY[sourceX];
-			dstY[tw + x] = srcY[sw + sourceX];
+			dstY[tw + x] = srcY[ss + sourceX];
 			dstY[x + 1] = srcY[sourceX + 1];
-			dstY[tw + x + 1] = srcY[sw + sourceX + 1];
+			dstY[tw + x + 1] = srcY[ss + sourceX + 1];
 
 			dstC[(y / 2) * tw + x + 0] = srcCb[(sourceX / 2) * 2];
 			dstC[(y / 2) * tw + x + 1] = srcCr[(sourceX / 2) * 2];

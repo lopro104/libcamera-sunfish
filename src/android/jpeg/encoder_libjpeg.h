@@ -38,6 +38,7 @@ private:
 	struct jpeg_error_mgr jerr_;
 
 	const libcamera::PixelFormatInfo *pixelFormatInfo_;
+	unsigned int rowStride_ = 0;
 
 	bool nv_;
 	bool nvSwap_;

@@ -98,6 +98,7 @@ int EncoderLibJpeg::configure(const StreamConfiguration &cfg)
 	jpeg_set_defaults(&compress_);
 
 	pixelFormatInfo_ = &info.pixelFormatInfo;
+	rowStride_ = cfg.stride;
 
 	nv_ = pixelFormatInfo_->numPlanes() == 2;
 	nvSwap_ = info.nvSwap;
@@ -139,6 +140,12 @@ void EncoderLibJpeg::compressNV(const std::vector<Span<uint8_t>> &planes)
 	unsigned int c_stride = pixelFormatInfo_->stride(compress_.image_width, 1);
 
 	unsigned int horzSubSample = 2 * compress_.image_width / c_stride;
+
+	/* The source rows may be padded (e.g. 128 byte aligned NV12). */
+	if (rowStride_ > y_stride) {
+		y_stride = rowStride_;
+		c_stride = rowStride_;
+	}
 	unsigned int vertSubSample = pixelFormatInfo_->planes[1].verticalSubSampling;
 
 	unsigned int c_inc = horzSubSample == 1 ? 2 : 0;

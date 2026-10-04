@@ -17,6 +17,7 @@ class Thumbnailer
 public:
 	Thumbnailer();
 
+	void setSourceStride(unsigned int stride) { sourceStride_ = stride; }
 	void configure(const libcamera::Size &sourceSize,
 		       libcamera::PixelFormat pixelFormat);
 	void createThumbnail(const libcamera::FrameBuffer &source,
@@ -29,4 +30,5 @@ private:
 	libcamera::Size sourceSize_;
 
 	bool valid_;
+	unsigned int sourceStride_ = 0;
 };

@@ -4,7 +4,7 @@
 version: 1
 algorithms:
   - BlackLevel:
-      blackLevel: 4096
+      blackLevel: 4224
   - Awb:
   - Ccm:
       ccms:

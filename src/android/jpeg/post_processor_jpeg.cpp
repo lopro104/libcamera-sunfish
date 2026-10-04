@@ -49,6 +49,7 @@ int PostProcessorJpeg::configure(const StreamConfiguration &inCfg,
 	streamSize_ = outCfg.size;
 
 	thumbnailer_.configure(inCfg.size, inCfg.pixelFormat);
+	thumbnailer_.setSourceStride(inCfg.stride);
 
 #if defined(OS_CHROMEOS)
 	encoder_ = std::make_unique<EncoderJea>();
