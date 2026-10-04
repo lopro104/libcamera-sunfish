@@ -189,9 +189,17 @@ int CameraStream::process(Camera3RequestDescriptor::StreamBuffer *streamBuffer)
 		streamBuffer->fence.reset();
 	}
 
-	const StreamConfiguration &output = configuration();
+	/*
+	 * The destination is the Android buffer, whose size can differ from
+	 * the source libcamera stream when the stream is scaled.
+	 */
+	const PixelFormat dstFormat =
+		cameraDevice_->capabilities()->toPixelFormat(camera3Stream_->format);
+	const Size dstSize(camera3Stream_->width, camera3Stream_->height);
 	streamBuffer->dstBuffer = std::make_unique<CameraBuffer>(
-		*streamBuffer->camera3Buffer, output.pixelFormat, output.size,
+		*streamBuffer->camera3Buffer,
+		dstFormat == formats::MJPEG ? configuration().pixelFormat : dstFormat,
+		dstFormat == formats::MJPEG ? configuration().size : dstSize,
 		PROT_READ | PROT_WRITE);
 	if (!streamBuffer->dstBuffer->isValid()) {
 		LOG(HAL, Error) << "Failed to create destination buffer";
