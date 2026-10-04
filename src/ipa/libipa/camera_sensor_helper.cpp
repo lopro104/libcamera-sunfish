@@ -554,6 +554,30 @@ public:
 };
 REGISTER_CAMERA_SENSOR_HELPER("imx219", CameraSensorHelperImx219)
 
+class CameraSensorHelperImx355 : public CameraSensorHelper
+{
+public:
+	CameraSensorHelperImx355()
+	{
+		/* 64 at 10 bits; analogue gain is 1024 / (1024 - x), max 960. */
+		blackLevel_ = 4096;
+		gain_ = AnalogueGainLinear{ 0, 1024, -1, 1024 };
+	}
+};
+REGISTER_CAMERA_SENSOR_HELPER("imx355", CameraSensorHelperImx355)
+
+class CameraSensorHelperImx363 : public CameraSensorHelper
+{
+public:
+	CameraSensorHelperImx363()
+	{
+		/* 64 at 10 bits; analogue gain is 512 / (512 - x), like IMX258. */
+		blackLevel_ = 4096;
+		gain_ = AnalogueGainLinear{ 0, 512, -1, 512 };
+	}
+};
+REGISTER_CAMERA_SENSOR_HELPER("imx363", CameraSensorHelperImx363)
+
 class CameraSensorHelperImx258 : public CameraSensorHelper
 {
 public:
