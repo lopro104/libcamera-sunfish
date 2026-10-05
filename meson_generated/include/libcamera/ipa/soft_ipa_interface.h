@@ -47,8 +47,9 @@ enum class _SoftCmd {
 
 enum class _SoftEventCmd {
 	SetSensorControls = 1,
-	SetIspParams = 2,
-	MetadataReady = 3,
+	SetLensControls = 2,
+	SetIspParams = 3,
+	MetadataReady = 4,
 };
 
 
@@ -60,16 +61,20 @@ public:
 
 	template<
 		typename T1 = ControlInfoMap,
-		std::enable_if_t<std::is_convertible_v<T1&&, ControlInfoMap>> * = nullptr
+		typename T2 = ControlInfoMap,
+		std::enable_if_t<std::is_convertible_v<T1&&, ControlInfoMap>> * = nullptr,
+		std::enable_if_t<std::is_convertible_v<T2&&, ControlInfoMap>> * = nullptr
 	>
-	IPAConfigInfo(T1 &&_sensorControls)
+	IPAConfigInfo(T1 &&_sensorControls, T2 &&_lensControls)
 		: sensorControls(std::forward<T1>(_sensorControls))
+		, lensControls(std::forward<T2>(_lensControls))
 	{
 	}
 #endif
 
 
 	ControlInfoMap sensorControls;
+	ControlInfoMap lensControls;
 };
 
 class IPASoftInterface : public IPAInterface
@@ -105,6 +110,8 @@ public:
 		const ControlList &sensorControls) = 0;
 
 	Signal<const ControlList &> setSensorControls;
+
+	Signal<const ControlList &> setLensControls;
 
 	Signal<> setIspParams;
 

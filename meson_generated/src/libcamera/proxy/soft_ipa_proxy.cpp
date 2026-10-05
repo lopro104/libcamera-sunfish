@@ -60,6 +60,7 @@ IPAProxySoftThreaded::IPAProxySoftThreaded(IPAModule *ipam, const CameraManager 
 
 
 	ipa_->setSensorControls.connect(this, &IPAProxySoftThreaded::setSensorControlsHandler);
+	ipa_->setLensControls.connect(this, &IPAProxySoftThreaded::setLensControlsHandler);
 	ipa_->setIspParams.connect(this, &IPAProxySoftThreaded::setIspParamsHandler);
 	ipa_->metadataReady.connect(this, &IPAProxySoftThreaded::metadataReadyHandler);
 
@@ -149,6 +150,13 @@ void IPAProxySoftThreaded::setSensorControlsHandler(
 {
 	ASSERT(state_ != ProxyStopped);
 	setSensorControls.emit(sensorControls);
+}
+
+void IPAProxySoftThreaded::setLensControlsHandler(
+	const ControlList &lensControls)
+{
+	ASSERT(state_ != ProxyStopped);
+	setLensControls.emit(lensControls);
 }
 
 void IPAProxySoftThreaded::setIspParamsHandler()
@@ -460,6 +468,10 @@ void IPAProxySoftIsolated::recvMessage(const IPCMessage &data)
 		setSensorControlsHandler(data.data().cbegin(), dataSize, data.fds());
 		break;
 	}
+	case _SoftEventCmd::SetLensControls: {
+		setLensControlsHandler(data.data().cbegin(), dataSize, data.fds());
+		break;
+	}
 	case _SoftEventCmd::SetIspParams: {
 		setIspParamsHandler(data.data().cbegin(), dataSize, data.fds());
 		break;
@@ -491,6 +503,25 @@ void IPAProxySoftIsolated::setSensorControlsHandler(
         	&controlSerializer_);
 
 	setSensorControls.emit(sensorControls);
+}
+
+void IPAProxySoftIsolated::setLensControlsHandler(
+	[[maybe_unused]] std::vector<uint8_t>::const_iterator data,
+	[[maybe_unused]] size_t dataSize,
+	[[maybe_unused]] const std::vector<SharedFD> &fds)
+{
+
+
+	const size_t lensControlsStart = 0;
+
+
+	ControlList lensControls =
+        IPADataSerializer<libcamera::ControlList>::deserialize(
+        	data + lensControlsStart,
+        	data + dataSize,
+        	&controlSerializer_);
+
+	setLensControls.emit(lensControls);
 }
 
 void IPAProxySoftIsolated::setIspParamsHandler(

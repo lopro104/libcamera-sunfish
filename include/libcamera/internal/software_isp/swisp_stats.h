@@ -32,6 +32,11 @@ struct SwIspStats {
 	 */
 	RGB<uint64_t> sum_;
 	/**
+	 * \brief Sum of absolute differences between horizontally adjacent
+	 *        green samples, a contrast measure for autofocus
+	 */
+	uint64_t sharpness;
+	/**
 	 * \brief Number of bins in the yHistogram
 	 */
 	static constexpr unsigned int kYHistogramSize = 64;

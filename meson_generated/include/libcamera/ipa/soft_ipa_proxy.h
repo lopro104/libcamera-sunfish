@@ -82,6 +82,9 @@ private:
         void setSensorControlsHandler(
         	const ControlList &sensorControls);
 
+        void setLensControlsHandler(
+        	const ControlList &lensControls);
+
         void setIspParamsHandler();
 
         void metadataReadyHandler(
@@ -181,6 +184,11 @@ private:
 
 
 	void setSensorControlsHandler(
+		std::vector<uint8_t>::const_iterator data,
+		size_t dataSize,
+		const std::vector<SharedFD> &fds);
+
+	void setLensControlsHandler(
 		std::vector<uint8_t>::const_iterator data,
 		size_t dataSize,
 		const std::vector<SharedFD> &fds);

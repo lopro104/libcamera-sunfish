@@ -11,6 +11,8 @@
 
 #include "libcamera/internal/software_isp/swstats_cpu.h"
 
+#include <cstdlib>
+
 #include <libcamera/base/log.h>
 
 #include <libcamera/stream.h>
@@ -177,12 +179,17 @@ static constexpr unsigned int kBlueYMul = 29; /* 0.114 * 256 */
                                           \
 	uint64_t sumR = 0;                \
 	uint64_t sumG = 0;                \
-	uint64_t sumB = 0;
+	uint64_t sumB = 0;                \
+	uint64_t sharp = 0;               \
+	int prevG = -1;
 
 #define SWSTATS_ACCUMULATE_LINE_STATS(div) \
 	sumR += r;                         \
 	sumG += g;                         \
 	sumB += b;                         \
+	if (prevG >= 0)                    \
+		sharp += std::abs(int(g) - prevG); \
+	prevG = g;                         \
                                            \
 	yVal = r * kRedYMul;               \
 	yVal += g * kGreenYMul;            \
@@ -192,7 +199,8 @@ static constexpr unsigned int kBlueYMul = 29; /* 0.114 * 256 */
 #define SWSTATS_FINISH_LINE_STATS() \
 	stats.sum_.r() += sumR;     \
 	stats.sum_.g() += sumG;     \
-	stats.sum_.b() += sumB;
+	stats.sum_.b() += sumB;     \
+	stats.sharpness += sharp;
 
 void SwStatsCpu::statsBGGR8Line0(const uint8_t *src[], SwIspStats &stats)
 {
@@ -339,6 +347,7 @@ void SwStatsCpu::startFrame(uint32_t frame)
 
 	for (auto &s : stats_) {
 		s.sum_ = RGB<uint64_t>({ 0, 0, 0 });
+		s.sharpness = 0;
 		s.yHistogram.fill(0);
 	}
 }
@@ -356,9 +365,11 @@ void SwStatsCpu::finishFrame(uint32_t frame, uint32_t bufferId)
 
 	if (valid) {
 		sharedStats_->sum_ = RGB<uint64_t>({ 0, 0, 0 });
+		sharedStats_->sharpness = 0;
 		sharedStats_->yHistogram.fill(0);
 		for (const auto &s : stats_) {
 			sharedStats_->sum_ += s.sum_;
+			sharedStats_->sharpness += s.sharpness;
 			for (unsigned int j = 0; j < SwIspStats::kYHistogramSize; j++)
 				sharedStats_->yHistogram[j] += s.yHistogram[j];
 		}

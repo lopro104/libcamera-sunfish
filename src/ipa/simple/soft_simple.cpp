@@ -78,6 +78,7 @@ private:
 	SwIspStats *stats_;
 	std::unique_ptr<CameraSensorHelper> camHelper_;
 	ControlInfoMap sensorInfoMap_;
+	ControlInfoMap lensInfoMap_;
 
 	/* Local parameter storage */
 	struct IPAContext context_;
@@ -202,6 +203,7 @@ int IPASoftSimple::init(const IPASettings &settings,
 int IPASoftSimple::configure(const IPAConfigInfo &configInfo)
 {
 	sensorInfoMap_ = configInfo.sensorControls;
+	lensInfoMap_ = configInfo.lensControls;
 
 	const ControlInfo &exposureInfo = sensorInfoMap_.find(V4L2_CID_EXPOSURE)->second;
 	const ControlInfo &gainInfo = sensorInfoMap_.find(V4L2_CID_ANALOGUE_GAIN)->second;
@@ -210,6 +212,13 @@ int IPASoftSimple::configure(const IPAConfigInfo &configInfo)
 	context_.configuration = {};
 	context_.activeState = {};
 	context_.frameContexts.clear();
+
+	auto lens = lensInfoMap_.find(V4L2_CID_FOCUS_ABSOLUTE);
+	if (lens != lensInfoMap_.end()) {
+		context_.configuration.lens.available = true;
+		context_.configuration.lens.min = lens->second.min().get<int32_t>();
+		context_.configuration.lens.max = lens->second.max().get<int32_t>();
+	}
 
 	context_.configuration.agc.lineDuration =
 		context_.sensorInfo.minLineLength * 1.0s / context_.sensorInfo.pixelRate;
@@ -310,6 +319,13 @@ void IPASoftSimple::processStats(const uint32_t frame,
 	for (const auto &algo : algorithms())
 		algo->process(context_, frame, frameContext, stats_, metadata);
 	metadataReady.emit(frame, metadata);
+
+	if (context_.activeState.af.apply && !lensInfoMap_.empty()) {
+		ControlList lensCtrls(lensInfoMap_);
+		lensCtrls.set(V4L2_CID_FOCUS_ABSOLUTE, context_.activeState.af.position);
+		setLensControls.emit(lensCtrls);
+		context_.activeState.af.apply = false;
+	}
 
 	/* Sanity check */
 	if (!sensorControls.contains(V4L2_CID_EXPOSURE) ||

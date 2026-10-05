@@ -42,6 +42,16 @@ public:
 			appendPOD<uint32_t>(retData, 0);
 		}
 
+		if (data.lensControls.size() > 0) {
+			std::vector<uint8_t> lensControls;
+			std::tie(lensControls, std::ignore) =
+				IPADataSerializer<ControlInfoMap>::serialize(data.lensControls, cs);
+			appendPOD<uint32_t>(retData, lensControls.size());
+			retData.insert(retData.end(), lensControls.begin(), lensControls.end());
+		} else {
+			appendPOD<uint32_t>(retData, 0);
+		}
+
 		return {retData, {}};
 	}
 
@@ -83,6 +93,30 @@ public:
 		if (sensorControlsSize > 0)
 			ret.sensorControls =
 				IPADataSerializer<ControlInfoMap>::deserialize(m, m + sensorControlsSize, cs);
+		m += sensorControlsSize;
+		dataSize -= sensorControlsSize;
+
+
+		if (dataSize < 4) {
+			LOG(IPADataSerializer, Error)
+				<< "Failed to deserialize " << "lensControlsSize"
+				<< ": not enough data, expected "
+				<< (4) << ", got " << (dataSize);
+			return ret;
+		}
+		const size_t lensControlsSize = readPOD<uint32_t>(m, 0, dataEnd);
+		m += 4;
+		dataSize -= 4;
+		if (dataSize < lensControlsSize) {
+			LOG(IPADataSerializer, Error)
+				<< "Failed to deserialize " << "lensControls"
+				<< ": not enough data, expected "
+				<< (lensControlsSize) << ", got " << (dataSize);
+			return ret;
+		}
+		if (lensControlsSize > 0)
+			ret.lensControls =
+				IPADataSerializer<ControlInfoMap>::deserialize(m, m + lensControlsSize, cs);
 
 		return ret;
 	}

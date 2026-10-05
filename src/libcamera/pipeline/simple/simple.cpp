@@ -34,6 +34,7 @@
 
 #include "libcamera/internal/camera.h"
 #include "libcamera/internal/camera_manager.h"
+#include "libcamera/internal/camera_lens.h"
 #include "libcamera/internal/camera_sensor.h"
 #include "libcamera/internal/camera_sensor_properties.h"
 #include "libcamera/internal/converter.h"
@@ -372,6 +373,7 @@ private:
 	void ispStatsReady(uint32_t frame, uint32_t bufferId);
 	void metadataReady(uint32_t frame, const ControlList &metadata);
 	void setSensorControls(const ControlList &sensorControls);
+	void setLensControls(const ControlList &lensControls);
 };
 
 class SimpleCameraConfiguration : public CameraConfiguration
@@ -626,6 +628,7 @@ int SimpleCameraData::init()
 			swIsp_->ispStatsReady.connect(this, &SimpleCameraData::ispStatsReady);
 			swIsp_->metadataReady.connect(this, &SimpleCameraData::metadataReady);
 			swIsp_->setSensorControls.connect(this, &SimpleCameraData::setSensorControls);
+			swIsp_->setLensControls.connect(this, &SimpleCameraData::setLensControls);
 		}
 	}
 
@@ -1056,6 +1059,14 @@ void SimpleCameraData::setSensorControls(const ControlList &sensorControls)
 		ControlList ctrls(sensorControls);
 		sensor_->setControls(&ctrls);
 	}
+}
+
+void SimpleCameraData::setLensControls(const ControlList &lensControls)
+{
+	CameraLens *lens = sensor_->focusLens();
+
+	if (lens && lensControls.contains(V4L2_CID_FOCUS_ABSOLUTE))
+		lens->setFocusPosition(lensControls.get(V4L2_CID_FOCUS_ABSOLUTE).get<int32_t>());
 }
 
 /* Retrieve all source pads connected to a sink pad through active routes. */
@@ -1593,6 +1604,8 @@ int SimplePipelineHandler::configure(Camera *camera, CameraConfiguration *c)
 	} else {
 		ipa::soft::IPAConfigInfo configInfo;
 		configInfo.sensorControls = data->sensor_->controls();
+		if (data->sensor_->focusLens())
+			configInfo.lensControls = data->sensor_->focusLens()->controls();
 		return data->swIsp_->configure(inputCfg, outputCfgs, configInfo);
 	}
 }

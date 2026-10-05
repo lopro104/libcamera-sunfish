@@ -33,6 +33,10 @@ struct IPASessionConfiguration {
 	struct {
 		std::optional<uint8_t> level;
 	} black;
+	struct {
+		bool available;
+		int32_t min, max;
+	} lens;
 };
 
 struct IPAActiveState {
@@ -54,6 +58,11 @@ struct IPAActiveState {
 	} awb;
 
 	Matrix<float, 3, 3> combinedMatrix;
+
+	struct {
+		int32_t position;
+		bool apply;
+	} af;
 
 	struct {
 		float gamma;

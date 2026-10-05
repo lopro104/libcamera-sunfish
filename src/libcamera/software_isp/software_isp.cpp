@@ -71,6 +71,11 @@ LOG_DEFINE_CATEGORY(SoftwareIsp)
  */
 
 /**
+ * \var SoftwareIsp::setLensControls
+ * \brief Signal emitted when the IPA wants the focus lens moved
+ */
+
+/**
  * \brief Constructs SoftwareIsp object
  * \param[in] pipe The pipeline handler in use
  * \param[in] sensor Pointer to the CameraSensor instance owned by the pipeline
@@ -168,6 +173,7 @@ SoftwareIsp::SoftwareIsp(PipelineHandler *pipe, const CameraSensor *sensor,
 					    metadataReady.emit(frame, metadata);
 				    });
 	ipa_->setSensorControls.connect(this, &SoftwareIsp::setSensorCtrls);
+	ipa_->setLensControls.connect(this, &SoftwareIsp::setLensCtrls);
 
 	debayer_->moveToThread(&ispWorkerThread_);
 }
@@ -420,6 +426,11 @@ void SoftwareIsp::saveIspParams()
 void SoftwareIsp::setSensorCtrls(const ControlList &sensorControls)
 {
 	setSensorControls.emit(sensorControls);
+}
+
+void SoftwareIsp::setLensCtrls(const ControlList &lensControls)
+{
+	setLensControls.emit(lensControls);
 }
 
 void SoftwareIsp::statsReady(uint32_t frame, uint32_t bufferId)
